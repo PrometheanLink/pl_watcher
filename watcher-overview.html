@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Watcher Suite - Overview</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --panel: #0b1220;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22d3ee;
+      --accent-2: #22c55e;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 24px;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(34,211,238,0.08), transparent 35%),
+                  radial-gradient(circle at 80% 0%, rgba(34,197,94,0.06), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    h1, h2, h3 { margin: 0 0 12px 0; letter-spacing: 0.02em; }
+    h1 { font-size: 28px; }
+    h2 { font-size: 20px; color: var(--accent); }
+    h3 { font-size: 16px; color: var(--accent-2); }
+    p { margin: 8px 0 12px 0; color: var(--text); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .grid { display: grid; gap: 12px; }
+    .grid.two { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    code { background: #0b1220; padding: 2px 6px; border-radius: 6px; color: #cbd5e1; }
+    pre {
+      background: #0b1220; color: #e5e7eb; border: 1px solid var(--border);
+      padding: 12px; border-radius: 10px; overflow: auto; font-size: 12px;
+    }
+    ul { margin: 8px 0 12px 20px; color: var(--text); }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.05); border: 1px solid var(--border);
+      font-size: 12px; color: var(--muted);
+    }
+    .section-title {
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Watcher Suite</h1>
+  <p>A local-first change logging and review dashboard that observes your git worktree, summarizes diffs with OpenAI, and surfaces them in a lightweight FastAPI web UI with git and namespace insights.</p>
+
+  <div class="card">
+    <div class="section-title">Core Loop</div>
+    <p><code>watcher.py</code> runs in the background (from a git repo root), polling every 30 seconds:</p>
+    <ul>
+      <li>Checks <code>git status --porcelain</code>; if no changes, it sleeps.</li>
+      <li>On changes: collects unified diff (<code>git diff</code>), current branch, touched files, and calls <code>openai_client.summarize_diff</code>.</li>
+      <li>Appends a JSON line to <code>changelog/YYYY-MM-DD.jsonl</code> with timestamp, branch, files, diff, and AI summary.</li>
+      <li>Never stages or commits; no destructive git commands.</li>
+    </ul>
+    <p class="pill">Requires <code>OPENAI_API_KEY</code> in env; model defaults to <code>gpt-4o-mini</code> (override via <code>WATCHER_MODEL</code>).</p>
+  </div>
+
+  <div class="card">
+    <div class="section-title">OpenAI Helper</div>
+    <p><code>openai_client.py</code> wraps the OpenAI chat API with retries and a concise changelog prompt; returns a fallback message if the key is missing or calls fail.</p>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Web Dashboard (FastAPI)</div>
+    <p>Located in <code>server/</code>. Start it from the repo root:</p>
+    <pre>uvicorn server.app:app --reload --port 5050</pre>
+    <div class="grid two">
+      <div class="card">
+        <h3>Change Timeline</h3>
+        <ul>
+          <li>Lists changelog entries (timestamp, branch, summary, files).</li>
+          <li>Filters: date, branch, file substring.</li>
+          <li>Click to view summary + raw diff.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Git Panel</h3>
+        <ul>
+          <li>Shows recent commits (<code>git log --oneline</code>), per-commit diff.</li>
+          <li>Checkout: creates a new branch (<code>review/&lt;hash&gt;</code>) at a commit; requires clean worktree; refuses if branch exists.</li>
+          <li>Status viewer (<code>git status --short --branch</code>).</li>
+        </ul>
+      </div>
+    </div>
+    <div class="card" style="background: var(--panel);">
+      <h3>Namespace Diff Panel</h3>
+      <p>AST-based index of functions, classes, methods, ORM tables (<code>__tablename__</code>), and columns (class attributes/annotations). Compares two refs (default WORKTREE vs HEAD) without checkout:</p>
+      <ul>
+        <li>Filters: by type (functions/classes/methods/tables/columns) and file substring (e.g., <code>models/</code>, <code>api/</code>).</li>
+        <li>Shows per-file added/removed identifiers and totals.</li>
+        <li>Flags possible renames (case/underscore changes), e.g., <code>customer_id → customerId</code>.</li>
+        <li>Snapshots: view namespace inventory for a single ref.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">API Endpoints</div>
+    <ul>
+      <li><code>GET /api/changes</code> (filters: date, branch, file, limit/offset) → timeline entries.</li>
+      <li><code>GET /api/changes/{id}</code> → entry with diff.</li>
+      <li><code>GET /api/commits</code> → recent commits; <code>GET /api/commits/{hash}</code> → commit diff.</li>
+      <li><code>GET /api/status</code> → git status; <code>POST /api/checkout</code> → new branch at commit (clean worktree only).</li>
+      <li><code>GET /api/namespaces</code> → snapshot of identifiers for a ref; <code>GET /api/namespaces/diff</code> → added/removed + rename hints between two refs.</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Directory Layout</div>
+    <ul>
+      <li><code>watcher.py</code> – background poller and logger.</li>
+      <li><code>openai_client.py</code> – OpenAI summarizer.</li>
+      <li><code>changelog/</code> – JSONL logs (one file per day).</li>
+      <li><code>server/</code> – FastAPI app, git helpers, namespace indexer, UI template.</li>
+      <li><code>server/templates/index.html</code> – dashboard UI (timeline, diff viewer, git panel, namespace diff).</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <div class="section-title">How to Run</div>
+    <ol>
+      <li>Ensure <code>OPENAI_API_KEY</code> is set.</li>
+      <li>From repo root, start watcher: <code>python watcher.py</code> (keep running).</li>
+      <li>In another shell, start dashboard: <code>uvicorn server.app:app --reload --port 5050</code>.</li>
+      <li>Open http://localhost:5050 (or VS Code Simple Browser) to view timeline, diffs, git panel, and namespace diff.</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Roadmap Ideas</div>
+    <ul>
+      <li>Syntax highlighting for diffs.</li>
+      <li>Tagging or bookmarking important entries.</li>
+      <li>Exporting summaries to Markdown/Notion.</li>
+      <li>Configurable polling interval and model selection in UI.</li>
+      <li>Optional auth for the dashboard.</li>
+    </ul>
+  </div>
+</body>
+</html>

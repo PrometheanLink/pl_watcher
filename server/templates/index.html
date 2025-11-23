@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Watcher Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --card: #1f2937;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22d3ee;
+      --danger: #ef4444;
+      --border: #1f2937;
+      --green: #22c55e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(34,211,238,0.08), transparent 35%),
+                  radial-gradient(circle at 80% 0%, rgba(34,197,94,0.06), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(120deg, rgba(34,211,238,0.12), rgba(34,197,94,0.08), transparent);
+    }
+    h1 { margin: 0; font-size: 18px; letter-spacing: 0.02em; }
+    .layout { display: grid; grid-template-columns: 1.1fr 1.7fr 0.9fr; gap: 12px; width: 100%; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .panel header { background: transparent; border: 0; padding: 14px 16px; }
+    .panel header h2 { margin: 0; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .scroll { overflow-y: auto; }
+    .timeline-item {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .timeline-item:hover { background: rgba(255,255,255,0.03); border-color: #1f2937; }
+    .timeline-item.active { border-left: 3px solid var(--accent); background: rgba(34,211,238,0.07); }
+    .time { font-size: 12px; color: var(--muted); }
+    .summary { font-size: 14px; margin: 4px 0; color: #e5e7eb; }
+    .meta { font-size: 12px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 3px 8px; border-radius: 999px;
+      background: rgba(255,255,255,0.05); color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .files { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .detail {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .summary-box {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 10px;
+    }
+    pre {
+      background: #0b1220;
+      color: #e5e7eb;
+      border: 1px solid var(--border);
+      padding: 12px;
+      border-radius: 10px;
+      overflow: auto;
+      font-size: 12px;
+      max-height: 50vh;
+      margin: 0;
+    }
+    .filters {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+    }
+    input, select, button {
+      background: #0b1220;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    button {
+      cursor: pointer;
+      background: linear-gradient(120deg, rgba(34,211,238,0.2), rgba(34,197,94,0.2));
+      border-color: rgba(34,211,238,0.4);
+    }
+    button.danger {
+      background: rgba(239,68,68,0.15);
+      border-color: rgba(239,68,68,0.5);
+      color: #fecaca;
+    }
+    .commits {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+    }
+    .commit-item {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .commit-item:hover { border-color: var(--accent); }
+    .commit-hash { font-family: monospace; color: var(--accent); }
+    .warning {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: #fecaca;
+      padding: 10px;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .status-box { font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <div style="width:100%; display:flex; flex-direction:column;">
+    <header>
+      <h1>Watcher Dashboard · Local-only</h1>
+    </header>
+    <div class="layout" style="padding:12px; flex:1; min-height:0;">
+      <!-- Timeline -->
+      <section class="panel">
+        <header><h2>Change Timeline</h2></header>
+        <div class="filters">
+          <input id="filter-date" type="date" />
+          <input id="filter-branch" type="text" placeholder="Branch" />
+          <input id="filter-file" type="text" placeholder="File contains…" />
+        </div>
+        <div id="timeline" class="scroll"></div>
+      </section>
+
+      <!-- Detail -->
+      <section class="panel">
+        <header><h2>Details</h2></header>
+        <div id="detail" class="detail">
+          <div class="summary-box" id="detail-summary">Select a change to view details.</div>
+        </div>
+      </section>
+
+      <!-- Git panel -->
+      <section class="panel">
+        <header><h2>Git Controls</h2></header>
+        <div style="padding:12px; display:flex; flex-direction:column; gap:10px; border-bottom:1px solid var(--border);">
+          <div class="warning">Checkout creates a new branch (review/&lt;hash&gt;). Requires clean worktree.</div>
+          <button onclick="refreshStatus()">Refresh Status</button>
+          <div class="status-box" id="status-box"></div>
+        </div>
+        <div class="commits" id="commits"></div>
+      </section>
+    </div>
+    <!-- Namespace diff row -->
+    <div class="panel" style="margin:12px; padding:12px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;">
+      <header style="padding:0 0 10px 0;"><h2>Namespace Diff (functions/classes/tables/columns)</h2></header>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+        <input id="ns-ref-a" type="text" placeholder="Ref A (default WORKTREE)" style="min-width:180px;" />
+        <input id="ns-ref-b" type="text" placeholder="Ref B (default HEAD)" style="min-width:180px;" />
+        <select id="ns-kind" style="min-width:140px;">
+          <option value="all">All types</option>
+          <option value="functions">Functions</option>
+          <option value="classes">Classes</option>
+          <option value="methods">Methods</option>
+          <option value="tables">Tables</option>
+          <option value="columns">Columns</option>
+        </select>
+        <input id="ns-file-filter" type="text" placeholder="File contains (e.g., models/)" style="min-width:200px;" />
+        <button onclick="loadNamespaceDiff()">Compare</button>
+        <button onclick="loadNamespaceSnapshot('A')">Load Ref A Snapshot</button>
+        <button onclick="loadNamespaceSnapshot('B')">Load Ref B Snapshot</button>
+      </div>
+      <div id="ns-summary" class="meta" style="margin-bottom:8px;"></div>
+      <div id="ns-diff" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:8px;"></div>
+      <div id="ns-renames" style="margin-top:10px;"></div>
+      <div id="ns-snapshot" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+  <script>
+    let changes = [];
+    let activeId = null;
+
+    async function fetchJSON(url, opts = {}) {
+      const res = await fetch(url, opts);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    }
+
+    function renderTimeline() {
+      const container = document.getElementById("timeline");
+      container.innerHTML = "";
+      changes.forEach(item => {
+        const div = document.createElement("div");
+        div.className = "timeline-item" + (item.id === activeId ? " active" : "");
+        div.onclick = () => loadDetail(item.id);
+        div.innerHTML = `
+          <div class="time">${item.timestamp}</div>
+          <div class="summary">${item.summary || "(no summary)"}</div>
+          <div class="meta">
+            <span class="badge">Branch: ${item.branch || "-"}</span>
+            <span class="badge">Files: ${item.files.length}</span>
+          </div>
+          <div class="files">${item.files.slice(0,4).join(", ")}${item.files.length>4 ? " …" : ""}</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function loadChanges() {
+      const date = document.getElementById("filter-date").value;
+      const branch = document.getElementById("filter-branch").value;
+      const file = document.getElementById("filter-file").value;
+      const qs = new URLSearchParams();
+      if (date) qs.set("date", date);
+      if (branch) qs.set("branch", branch);
+      if (file) qs.set("file", file);
+      const data = await fetchJSON(`/api/changes?${qs.toString()}`);
+      changes = data.items || [];
+      renderTimeline();
+    }
+
+    async function loadDetail(id) {
+      activeId = id;
+      renderTimeline();
+      const detail = await fetchJSON(`/api/changes/${id}`);
+      const detailBox = document.getElementById("detail");
+      detailBox.innerHTML = `
+        <div class="summary-box">
+          <div style="font-size:12px; color:var(--muted);">${detail.timestamp} · ${detail.branch}</div>
+          <div style="font-size:16px; margin-top:6px;">${detail.summary || "(no summary)"}</div>
+          <div style="font-size:12px; color:var(--muted); margin-top:4px;">Files: ${detail.files.join(", ")}</div>
+        </div>
+        <pre>${escapeHtml(detail.diff || "(no diff)")}</pre>
+      `;
+    }
+
+    function escapeHtml(str) {
+      return (str || "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\'':'&#39;','"':'&quot;'}[c]));
+    }
+
+    async function loadCommits() {
+      const data = await fetchJSON("/api/commits");
+      const list = data.items || [];
+      const container = document.getElementById("commits");
+      container.innerHTML = "";
+      list.forEach(c => {
+        const div = document.createElement("div");
+        div.className = "commit-item";
+        div.innerHTML = `
+          <div><span class="commit-hash">${c.short_hash}</span> ${c.title}</div>
+          <div style="margin-top:6px; display:flex; gap:6px;">
+            <button onclick="showCommitDiff('${c.hash}')">Diff</button>
+            <button onclick="checkout('${c.hash}')" class="danger">Checkout new branch</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function showCommitDiff(hash) {
+      const data = await fetchJSON(`/api/commits/${hash}`);
+      alert(`Diff for ${hash}:\n\n${data.diff}`);
+    }
+
+    async function checkout(hash) {
+      const confirmMsg = `Create branch review/${hash.slice(0,7)} at ${hash}? Requires clean worktree.`;
+      if (!confirm(confirmMsg)) return;
+      try {
+        const res = await fetchJSON("/api/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hash })
+        });
+        alert("Created and switched to branch: " + res.branch);
+        refreshStatus();
+      } catch (err) {
+        alert("Checkout failed: " + err.message);
+      }
+    }
+
+    async function refreshStatus() {
+      try {
+        const data = await fetchJSON("/api/status");
+        document.getElementById("status-box").textContent = data.status || "(no status)";
+      } catch (err) {
+        document.getElementById("status-box").textContent = "Status error: " + err.message;
+      }
+    }
+
+    document.getElementById("filter-date").addEventListener("change", loadChanges);
+    document.getElementById("filter-branch").addEventListener("input", debounce(loadChanges, 200));
+    document.getElementById("filter-file").addEventListener("input", debounce(loadChanges, 200));
+
+    async function loadNamespaceDiff() {
+      const refA = document.getElementById("ns-ref-a").value || "WORKTREE";
+      const refB = document.getElementById("ns-ref-b").value || "HEAD";
+      const kindFilter = document.getElementById("ns-kind").value;
+      const fileFilter = (document.getElementById("ns-file-filter").value || "").toLowerCase();
+      const qs = new URLSearchParams({ ref_a: refA, ref_b: refB });
+      const data = await fetchJSON(`/api/namespaces/diff?${qs.toString()}`);
+      const summary = document.getElementById("ns-summary");
+      summary.textContent = `Compared ${refA} → ${refB}`;
+      const container = document.getElementById("ns-diff");
+      container.innerHTML = "";
+      Object.entries(data.files || {}).forEach(([file, diff]) => {
+        if (fileFilter && !file.toLowerCase().includes(fileFilter)) return;
+        const card = document.createElement("div");
+        card.className = "summary-box";
+        const sections = Object.entries(diff).map(([kind, payload]) => {
+          if (kindFilter !== "all" && kind !== kindFilter) return "";
+          const added = (payload.added || []).map(v => `<span style="color:var(--green)">+ ${escapeHtml(v)}</span>`).join("<br>");
+          const removed = (payload.removed || []).map(v => `<span style="color:var(--danger)">− ${escapeHtml(v)}</span>`).join("<br>");
+          return `<div style="margin-top:6px;">
+            <div style="font-weight:bold; text-transform:capitalize;">${kind}</div>
+            <div style="font-size:12px;">${added || ""}${added && removed ? "<br>" : ""}${removed || ""}</div>
+          </div>`;
+        }).filter(Boolean).join("");
+        if (!sections) return;
+        card.innerHTML = `<div style="font-size:13px; color:var(--muted);">${file}</div>${sections}`;
+        container.appendChild(card);
+      });
+      const totals = [];
+      for (const [kind, arr] of Object.entries(data.added_totals || {})) {
+        const removedArr = data.removed_totals?.[kind] || [];
+        totals.push(`${kind}: +${arr.length} / -${removedArr.length}`);
+      }
+      summary.textContent += ` · ${totals.join(" · ")}`;
+
+      // Renames
+      const renames = data.renames || [];
+      const renameBox = document.getElementById("ns-renames");
+      const filteredRenames = renames.filter(r => {
+        if (kindFilter !== "all" && r.type !== kindFilter) return false;
+        if (fileFilter && !r.file.toLowerCase().includes(fileFilter)) return false;
+        return true;
+      });
+      if (filteredRenames.length) {
+        renameBox.innerHTML = `<div class="summary-box"><div style="font-weight:bold; margin-bottom:6px;">Possible renames (${filteredRenames.length}):</div>` +
+          filteredRenames.map(r => `<div style="font-size:12px; color:var(--muted);">${r.file} · ${r.type}: <span style="color:var(--danger)">${escapeHtml(r.from)}</span> → <span style="color:var(--green)">${escapeHtml(r.to)}</span></div>`).join("") +
+          `</div>`;
+      } else {
+        renameBox.innerHTML = "";
+      }
+    }
+
+    async function loadNamespaceSnapshot(which) {
+      const ref = which === "A" ? (document.getElementById("ns-ref-a").value || "WORKTREE")
+                                : (document.getElementById("ns-ref-b").value || "HEAD");
+      const data = await fetchJSON(`/api/namespaces?ref=${encodeURIComponent(ref)}`);
+      const target = document.getElementById("ns-snapshot");
+      target.innerHTML = `<div class="summary-box">
+        <div style="font-weight:bold;">Snapshot: ${ref}</div>
+        <div style="font-size:12px; color:var(--muted);">Files: ${Object.keys(data).length}</div>
+      </div>`;
+    }
+
+    function debounce(fn, delay) {
+      let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
+    }
+
+    (async function init() {
+      await loadChanges();
+      await loadCommits();
+      await refreshStatus();
+    })();
+  </script>
+</body>
+</html>
